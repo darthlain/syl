@@ -1,9 +1,31 @@
-import os, sys, pygame, wx
+
+### だいなファイラのパクリ
+
+# Win+d2回押したあとに操作するとエラー音がうるさい
+# とりあえず画像関係は全部書き直し
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+################################################################################
+
+import os, sys, pygame, wx, util, subprocess, shutil
 from pygame.locals import *
 
 from util import Input
 from util import Input, FileList
-from filer import FilerFileList, History, ImageDraw, ExtCommand
+from filer import FilerFileList, History, ExtCommand
 
 # infoのフォルダのファイル数やサイズ等の調査のための構造体
 class FolderSearch:
@@ -48,29 +70,33 @@ class Main:
 
         #
         pygame.init()
-        self.screen_set_mode((600, 400))
+
+
+        self.screen = pygame.display.set_mode((600, 400), RESIZABLE)
         pygame.key.set_repeat(500, 35)
         self.clock = pygame.time.Clock()
-        self.set_font(self.font_name, self.font_size)
+        self.font = pygame.font.Font(self.font_name, self.font_size)
         self.wx_app = wx.App()
-        self.input = Input()
+        self.always_input = Input()
+        self.normal_input = Input()
+        self.image_input = Input()
         self.set_keybind()
-        self.set_filer_keybind()
+        self.input = self.always_input + self.normal_input
         self.history = History()
         self.left_filelist = FilerFileList(mode = self.mode_filer_str, side = 'left', history = self.history)
         self.right_filelist = FilerFileList(mode = self.mode_filer_str, side = 'right', history = self.history)
         self.side = 'left'
-        self.image = ImageDraw()
         self.ext = ExtCommand()
-        self.set_imgext()
 
         if self.init_path:
             self.left_filelist.chdir(self.init_path)
 
+    # 終了するときに起動するやつ
     def quit(self):
         pygame.quit()
         sys.exit()
 
+    # メインループ
     def main(self):
         while 1:
             self.fill(self.color_bg)
@@ -86,17 +112,18 @@ class Main:
                 if event.type == KEYDOWN:
                     self.input.get(event)
 
+            # これがないとCPUが暴走する
             self.clock.tick(60)
 
-    def screen_set_mode(self, *args):
-        self.screen = pygame.display.set_mode(*args, RESIZABLE)
-
+    # ウインドウサイズを取得
     def screen_size(self):
         return pygame.display.get_surface().get_size()
 
+    # ウインドウサイズの半分
     def half_screen_size(self):
         return self.screen_size()[0] // 2, self.screen_size()[1] // 2
 
+    # フォントサイズ取得 横用に半分に
     def _font_size(self):
         return self.font_size // 2, self.font_size
 
@@ -109,25 +136,28 @@ class Main:
     def filelist_show(self):
         return self.char_show()[1] - self.upinfo_show - self.downinfo_show - self.message_show
 
+    # ファイルリスト横の画面の表示文字数
     def filelist_x_show(self):
         return self.half_screen_size()[0] // self._font_size()[0]
 
-    def set_font(self, name, size):
-        self.font = pygame.font.Font(name, size)
-
+    # ウィンドウに文字を表示する
     def echo(self, color, pos, s):
         text = self.font.render(s, True, color)
         self.screen.blit(text, pos)
 
+    # ウィンドウをその色に染める 画面初期化に使う
     def fill(self, color):
         self.screen.fill(color)
 
+    # 中身を塗りつぶした四角を表示する
     def square(self, color, pos, size):
         pygame.draw.rect(self.screen, color, pos + size)
 
+    # 線を表示する
     def line(self, color, fr, to, depth = 1):
         pygame.draw.line(self.screen, color, fr, to, depth)
 
+    # ファイルリストを表示する
     def echo_filelist(self, filelist):
 
         for i in range(self.filelist_show()):
@@ -146,34 +176,32 @@ class Main:
 
                 self.echo(c, (p, self.font_size * (i + self.upinfo_show)), a.name())
 
-    def fileitem_str(self, item):
-        pass
-
-    def filelist_left0pos(self, filelist):
-        if filelist.side == 'left':
-            return 0
-        else:
-            return self.half_screen_size()[0] + 1
-
-    def filelist_left0pos2(self, side):
+    # ファイルリストのxが0の位置
+    def filelist_left0pos(self, side):
         if side == 'left':
             return 0
         else:
             return self.half_screen_size()[0] + 1
 
-    def filelist_linepos(self, i, filelist):
+    # ファイルリストのラインの位置
+    def filelist_linepos(self, i):
         return self.font_size * (i + self.upinfo_show)
 
+    # ファイルリストのyが0の位置
+    # + 1 は後付でとりあえず入れておいたがどうだろうか
     def filelist_y0pos(self):
-        return self.font_size * 2
+        return self.font_size * self.upinfo_show + 1
 
+    # ファイルリストのラインを表示する
     def display_filelist_line(self, filelist):
-        p = self.filelist_left0pos(filelist)
+        p = self.filelist_left0pos(filelist.side)
+        y = filelist.line + self.upinfo_show + 1
 
         self.line(self.color_line,
-                  (p, self.font_size * (filelist.line + 1 + self.upinfo_show)),
-                  (p + self.half_screen_size()[0], self.font_size * (filelist.line + 1 + self.upinfo_show)))
+                  (p, self.font_size * y),
+                  (p + self.half_screen_size()[0], self.font_size * y))
 
+    # ファイルリストの選択を表示する 四角
     def echo_select(self, filelist):
         for i in range(self.filelist_show()):
             n = filelist.displayed_item(i)
@@ -181,32 +209,33 @@ class Main:
                 return
             elif n.name() in filelist.select:
                 self.square(self.color_mark,
-                            (self.filelist_left0pos(filelist), self.filelist_linepos(i, filelist)),
+                            (self.filelist_left0pos(filelist.side), self.filelist_linepos(i)),
                             (self.half_screen_size()[0], self.font_size))
 
+    # アクティブな方のファイルリストを返す
     def current_filelist(self):
         if self.side == 'left':
             return self.left_filelist
         else:
             return self.right_filelist
 
+    # アクティブでない方のファイルリストを返す
     def nocurrent_filelist(self):
         if self.side == 'left':
             return self.right_filelist
         else:
             return self.left_filelist
 
+    # 引数のファイルリストでない方のファイルリストを返す
+    # これ多分いらないんじゃないかと思う
     def opposite_filelist(self, filelist):
         if filelist.side == 'left':
             return self.right_filelist
         else:
             return self.left_filelist
 
-    # downで使うやつ
-    def _scrolloff(self):
-        return min(self.scrolloff, self.filelist_show() // 2)
-
     # ファイラ画面の描写
+    # 条件分岐とかしてデカくなるか あるいは他に関数を作るのかは今のところわからない
     def display_filer(self):
         self.fill(self.color_bg)
         self.echo(self.color_path, (0, 0), str(self.left_filelist.path()))
@@ -218,17 +247,17 @@ class Main:
         self.echo(self.color_path,
                   (self.half_screen_size()[0] + 1, 0),
                   str(self.right_filelist.path()))
+
+        d = self.font_size * (self.downinfo_show + self.message_show)
+
         # 中央縦線
         self.line(self.color_frame,
-                  (self.half_screen_size()[0], 0),
-                  (self.half_screen_size()[0], self.screen_size()[1] - self.font_size * (self.downinfo_show + self.message_show)))
+                  (self.half_screen_size()[0], 0), (self.half_screen_size()[0], self.screen_size()[1] - d))
         self.line(self.color_frame,
-                  (0, self._font_size()[1] * 2),
-                  (self.screen_size()[0], self._font_size()[1] * 2))
+                  (0, self._font_size()[1] * 2), (self.screen_size()[0], self._font_size()[1] * 2))
         # ファイルリスト下線
         self.line(self.color_frame,
-                  (0, self.screen_size()[1] - self.font_size * (self.downinfo_show + self.message_show)),
-                  (self.screen_size()[0], self.screen_size()[1] - self.font_size * (self.downinfo_show + self.message_show)))
+                  (0, self.screen_size()[1] - d), (self.screen_size()[0], self.screen_size()[1] - d))
         # メッセージ下線
         self.square((240,240,240),
                     (0, self.screen_size()[1] - self.font_size * self.downinfo_show),
@@ -236,13 +265,13 @@ class Main:
         # 最下インフォ ファイル名
         if not self.current_filelist().is_empty():
             self.echo(self.color_bg,
-                      (0, self.screen_size()[1] - self.font_size),
-                      self.current_filelist().line_item().name())
+                      (0, self.screen_size()[1] - self.font_size), self.current_filelist().line_item().name())
 
         self.echo_select(self.right_filelist)
         self.echo_filelist(self.right_filelist)
         self.display_filelist_line(self.current_filelist())
 
+        # これなんやろ
         if self.current_filelist().mode == self.mode_image_str:
             self.display_filelist_line(self.nocurrent_filelist())
 
@@ -251,12 +280,14 @@ class Main:
         if self.right_filelist.fileinfo_flag:
             self.display_fileinfo(self.right_filelist, self.left_filelist)
 
-        self.image_draw()
+        # self.image_draw()
 
+    # 非アクティブのファイルリストがあるところにファイル情報を表示するらしい
+    # 下のと被ってるし いらないんじゃないか
     def display_fileinfo(self, filelist_info, filelist_view):
         if filelist_info.is_empty():
             return
-        x0 = self.filelist_left0pos(filelist_view) + 1
+        x0 = self.filelist_left0pos(filelist_view.side) + 1
         y0 = self.font_size * 2 + 1
 
         self.square(self.color_bg, (x0, y0), (self.half_screen_size()[0], self.font_size * self.filelist_show()))
@@ -267,12 +298,13 @@ class Main:
         size = self.filelist_item_size(filelist_info.line_item())
 
         if size:
-            size_format = self.filesize_format(size)
+            size_format = util.filesize_format(size)
         else:
             size_format = '不明'
 
         self.echo(self.color_fg, (x0, y0 + self.font_size * 2), 'サイズ: %s' % size_format)
 
+    # ファイル情報のリストらしい
     def fileinfo_list(self, filelist):
         lst = []
         lst.append('名前: %s' % filelist.line_item().name())
@@ -283,7 +315,7 @@ class Main:
         if searched.is_over:
             size_format = '不明'
         else:
-            size_format = self.filesize_format(searched.size)
+            size_format = util.filesize_format(searched.size)
 
         if not searched.permission_error:
             lst.append('サイズ: %s' % size_format)
@@ -310,6 +342,7 @@ class Main:
             else:
                 self.down(filelist)
 
+    # 該当のファイルリストを再読み込みする
     def reload(self, filelist):
         p = not filelist.is_empty()
         if p:
@@ -318,6 +351,8 @@ class Main:
         if p:
             self.line_move(filelist, a)
 
+    # 仮置き
+    # 画面上に表示のほか ファイル出力も考えてる
     def message(self, s):
         print(s)
 
@@ -354,12 +389,13 @@ class Main:
                     if filelist2 != None:
                         self.reload(filelist2)
                 except shutil.SameFileError:
-                    self.message(name + ': 送り先に同盟のファイルが既に存在します')
+                    self.message(name + ': 送り先に同名のファイルが既に存在します')
                 except shutil.Error:
                     self.message(name + ': エラー')
                 except Exception as e:
                     self.message(name + ': %s' % e)
 
+    # よくわからない ファイルサイズを図るやつだろうが
     def filelist_item_size(self, item):
         acc = FolderSearch()
         count = 0
@@ -393,114 +429,53 @@ class Main:
             acc.is_over = True
         return acc
 
-    def filesize_format(self, size):
-        # 1TB以上
-        if size >= pow(1024, 4):
-            a = pow(1024, 4)
-            b = 'TB'
-        elif size >= pow(1024, 3):
-            a = pow(1024, 3)
-            b = 'GB'
-        elif size >= pow(1024, 2):
-            a = pow(1024, 2)
-            b = 'MB'
-        elif size >= pow(1024, 1):
-            a = pow(1024, 1)
-            b = 'KB'
-        else:
-            a = 1
-            b = 'B'
-        return '%s %s' % (str(round(size / a, 2)), b)
+    # ファイル操作のキーバインドを設定
+    def set_normal_keybind(self):
+        self.input = self.always_input + self.normal_input
 
-    def set_mode_keybind(self, filelist):
-        self.input.reset()
-        self.set_keybind()
-
-        if filelist.mode == self.mode_filer_str:
-            self.set_filer_keybind()
-        if filelist.mode == self.mode_image_str:
-            self.set_image_keybind()
-
-    # 拡張子の画像をファイラで開けるようにする
-    def set_imgext(self):
-        for i in self.img_ext:
-            self.ext.set(i, lambda p: self.enter_image_mode(self.current_filelist()))
-
-    def image_load(self, filelist):
-        if filelist.line_item().ext() in self.img_ext:
-            self.image.image = pygame.image.load(str(filelist.line_item().path())).convert_alpha()
-            self.image.look_filelist = self.opposite_filelist(filelist)
-            # self.path = filelist.line_item()
-
-            self.image_resize_aspect(filelist)
-
-    def image_quit(self):
-        self.image.__init__()
-
-    def enter_image_mode(self, filelist):
-        self.image_load(filelist)
-        self.opposite_filelist(filelist).mode = self.mode_image_str
-        self.sidetoggle()
-
-    def quit_image_mode(self, filelist):
-        filelist.mode = self.mode_filer_str
-        self.image_quit()
-        self.sidetoggle()
-
-    def image_resize_aspect(self, filelist):
-        a = self.half_screen_size()[0]
-        b = self.image.image.get_rect()
-        self.image.resize = pygame.transform.scale(self.image.image, (a, int(a * b[3] / b[2])))
-
-    def image_draw(self):
-        if not self.image.image:
-            return
-
-        if self.image.resize:
-            a = self.image.resize
-        else:
-            a = self.image.image
-
-        pos = (self.filelist_left0pos2(self.image.look_filelist.side), self.filelist_y0pos())
-        self.screen.blit(a, pos)
+    # 画像ビューワのキーバインドを設定
+    def set_image_keybind(self):
+        self.input = self.always_input + self.image_input
 
     def set_keybind(self):
-        self.input.set([K_ESCAPE],              self.quit)
+        self.always_input.set([K_ESCAPE],              self.quit)
 
-    def set_filer_keybind(self):
-        self.input.set([K_TAB],                 lambda: self.sidetoggle()) 
-        self.input.set([K_j],                   lambda: self.down(self.current_filelist())) 
-        self.input.set([K_k],                   lambda: self.up(self.current_filelist())) 
-        self.input.set([K_g],                   lambda: self.top(self.current_filelist())) 
-        self.input.set([K_g, 'shift'],          lambda: self.bottom(self.current_filelist())) 
-        self.input.set([K_h],                   lambda: self.back(self.current_filelist())) 
-        self.input.set([K_l],                   lambda: self.enter(self.current_filelist())) 
-        self.input.set([K_g, 'ctrl'],           lambda: self.goto(self.current_filelist())) 
-        self.input.set([K_v],                   lambda: self.open(self.current_filelist())) 
-        self.input.set([K_o],                   lambda: self.sideopen()) 
-        self.input.set([K_w],                   lambda: self.mkdir(self.current_filelist())) 
-        self.input.set([K_r],                   lambda: self.rename(self.current_filelist())) 
-        self.input.set([K_d, 'shift'],          lambda: self.duplicate(self.current_filelist())) 
-        self.input.set([K_d],                   lambda: self.trash(self.current_filelist())) 
-        self.input.set([K_m],                   lambda: self.move(self.current_filelist(), self.nocurrent_filelist())) 
-        self.input.set([K_c],                   lambda: self.copy(self.current_filelist(), self.nocurrent_filelist())) 
-        self.input.set([K_SPACE],               lambda: self.select_down(self.current_filelist())) 
-        self.input.set([K_SPACE, 'shift'],      lambda: self.select_up(self.current_filelist())) 
-        self.input.set([K_x],                   lambda: self.select_clear(self.current_filelist())) 
-        self.input.set([K_a, 'shift'],          lambda: self.select_all(self.current_filelist())) 
-        self.input.set([K_a],                   lambda: self.select_all_file(self.current_filelist())) 
-        self.input.set([K_SEMICOLON],           lambda: self.linearg_command(self.current_filelist())) 
-        self.input.set([K_SEMICOLON, 'shift'],  lambda: self.command()) 
-        self.input.set([K_i],                   lambda: self.fileinfo_dialog(self.current_filelist())) 
-        self.input.set([K_h, 'shift'],          lambda: self.screen_top(self.current_filelist())) 
-        self.input.set([K_m, 'shift'],          lambda: self.screen_middle(self.current_filelist())) 
-        self.input.set([K_l, 'shift'],          lambda: self.screen_bottom(self.current_filelist())) 
+        self.normal_input.set([K_TAB],                 lambda: self.sidetoggle())
+        self.normal_input.set([K_j],                   lambda: self.down(self.current_filelist()))
+        self.normal_input.set([K_k],                   lambda: self.up(self.current_filelist()))
+        self.normal_input.set([K_g],                   lambda: self.top(self.current_filelist()))
+        self.normal_input.set([K_g, 'shift'],          lambda: self.bottom(self.current_filelist()))
+        self.normal_input.set([K_h],                   lambda: self.back(self.current_filelist()))
+        self.normal_input.set([K_l],                   lambda: self.enter(self.current_filelist()))
+        self.normal_input.set([K_g, 'ctrl'],           lambda: self.goto(self.current_filelist()))
+        self.normal_input.set([K_v],                   lambda: self.open(self.current_filelist()))
+        self.normal_input.set([K_o],                   lambda: self.sideopen())
+        self.normal_input.set([K_w],                   lambda: self.mkdir(self.current_filelist()))
+        self.normal_input.set([K_r],                   lambda: self.rename(self.current_filelist()))
+        self.normal_input.set([K_d, 'shift'],          lambda: self.duplicate(self.current_filelist()))
+        self.normal_input.set([K_d],                   lambda: self.trash(self.current_filelist()))
+        self.normal_input.set([K_m],                   lambda: self.move(self.current_filelist(), self.nocurrent_filelist()))
+        self.normal_input.set([K_c],                   lambda: self.copy(self.current_filelist(), self.nocurrent_filelist()))
+        self.normal_input.set([K_SPACE],               lambda: self.select_down(self.current_filelist()))
+        self.normal_input.set([K_SPACE, 'shift'],      lambda: self.select_up(self.current_filelist()))
+        self.normal_input.set([K_x],                   lambda: self.select_clear(self.current_filelist()))
+        self.normal_input.set([K_a, 'shift'],          lambda: self.select_all(self.current_filelist()))
+        self.normal_input.set([K_a],                   lambda: self.select_all_file(self.current_filelist()))
+        self.normal_input.set([K_SEMICOLON],           lambda: self.linearg_command(self.current_filelist()))
+        self.normal_input.set([K_SEMICOLON, 'shift'],  lambda: self.command())
+        self.normal_input.set([K_i],                   lambda: self.fileinfo_dialog(self.current_filelist()))
+        self.normal_input.set([K_h, 'shift'],          lambda: self.screen_top(self.current_filelist()))
+        self.normal_input.set([K_m, 'shift'],          lambda: self.screen_middle(self.current_filelist()))
+        self.normal_input.set([K_l, 'shift'],          lambda: self.screen_bottom(self.current_filelist()))
 
-    def set_image_keybind(self):
-        self.input.set([K_TAB],                 lambda: self.sidetoggle()) 
-        self.input.set([K_j],                   lambda: self.image_down(self.current_filelist())) 
-        self.input.set([K_k],                   lambda: self.image_up(self.current_filelist())) 
-        self.input.set([K_h],                   lambda: self.image_back(self.current_filelist())) 
+        # self.image_input.set([K_TAB],                  lambda: self.sidetoggle())
+        # self.image_input.set([K_j],                    lambda: self.image_down(self.current_filelist()))
+        # self.image_input.set([K_k],                    lambda: self.image_up(self.current_filelist()))
+        # self.image_input.set([K_h],                    lambda: self.image_back(self.current_filelist()))
+
+    # up downで使うやつ
+    def _scrolloff(self):
+        return min(self.scrolloff, self.filelist_show() // 2)
 
     def down(self, filelist):
         a = False
@@ -579,21 +554,20 @@ class Main:
         a = util.wx_input_dialog('goto?')
 
         if a:
-            path = Path(a)
+            path = util.Path(a)
 
             if path.is_exist():
                 filelist.chdir(path)
             else:
                 # TODO 失敗メッセージ
-                pass
+                self.message('goto: Directory Not Found')
 
+    # ファイルリストの該当のファイルを開く
     def open(self, filelist):
-        p = platform.system()
-
-        if self.open_command: a = open_command
-        elif  p == 'Windows': a = 'start ""'
-        elif    p == 'Linux': a = 'xdg-open'
-        else:                 a = 'open'
+        if self.open_command:   a = open_command
+        elif util.is_windows(): a = 'start ""'
+        elif util.is_linux():   a = 'xdg-open'
+        else:                   a = 'open'
 
         a = a + ' "' + str(filelist.line_item().path()) + '"'
         subprocess.run(a, shell=True)
@@ -603,8 +577,6 @@ class Main:
             self.side = 'right'
         else:
             self.side = 'left'
-
-        self.set_mode_keybind(self.current_filelist())
 
     def sideopen(self):
         self.nocurrent_filelist().chdir(self.current_filelist().path())
@@ -642,7 +614,7 @@ class Main:
             self.message('duplicate: %s -> %s' % (str(filelist.line_item().path()), a))
             n = filelist.line_item().path().name()
             shutil.copy2(filelist.line_item().path().true_str(), self.temp)
-            (Path(self.temp) / n).rename(filelist.path() / a)
+            (util.Path(self.temp) / n).rename(filelist.path() / a)
             self.reload(filelist)
 
     def trash(self, filelist):
@@ -703,18 +675,7 @@ class Main:
             self.message(i)
 
     def fileinfo_dialog(self, filelist):
-        self.question_dialog('\n'.join(self.fileinfo_list(filelist)))
-
-    def image_down(self, filelist):
-        if self.down(self.opposite_filelist(filelist)):
-            self.image_load(self.opposite_filelist(filelist))
-
-    def image_up(self, filelist):
-        if self.up(self.opposite_filelist(filelist)):
-            self.image_load(self.opposite_filelist(filelist))
-
-    def image_back(self, filelist):
-        self.quit_image_mode(filelist)
+        util.wx_question_dialog('\n'.join(self.fileinfo_list(filelist)))
 
 a = Main()
 

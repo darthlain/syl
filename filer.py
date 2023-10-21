@@ -71,13 +71,6 @@ class HistoryItem:
         self.line = line
         self.scroll = scroll
 
-class ImageDraw:
-
-    def __init__(self):
-        self.image = None
-        self.aspect = True
-        self.resize = None
-
 class ExtCommand:
 
     def __init__(self):

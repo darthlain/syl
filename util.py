@@ -1,4 +1,4 @@
-import os, sys, copy, wx
+import os, sys, copy, wx, platform
 from pygame.locals import *
 from pathlib import Path as _Path
 
@@ -8,6 +8,11 @@ class Input:
     def __init__(self):
         self.bind = {}
         self.frozen = False
+
+    def __add__(self, b):
+        new = Input()
+        new.bind = self.bind | b.bind
+        return new
 
     # eventから何が入力されたのか読み取って実行
     def get(self, event):
@@ -136,3 +141,29 @@ def wx_question_dialog(msg):
         return True
     else:
         return False
+
+def is_windows():
+    return platform.system() == 'Windows'
+
+def is_linux():
+    return platform.system() == 'Linux'
+
+# ファイルサイズのフォーマット
+def filesize_format(size):
+    # 1TB以上
+    if size >= pow(1024, 4):
+        a = pow(1024, 4)
+        b = 'TB'
+    elif size >= pow(1024, 3):
+        a = pow(1024, 3)
+        b = 'GB'
+    elif size >= pow(1024, 2):
+        a = pow(1024, 2)
+        b = 'MB'
+    elif size >= pow(1024, 1):
+        a = pow(1024, 1)
+        b = 'KB'
+    else:
+        a = 1
+        b = 'B'
+    return '%s %s' % (str(round(size / a, 2)), b)
