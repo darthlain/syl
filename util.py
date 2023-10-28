@@ -214,6 +214,17 @@ class ExtCommand:
         return self.dict.get(ext)
 
 
+# infoのフォルダのファイル数やサイズ等の調査のための構造体
+class FolderSearch:
+
+    def __init__(self):
+        self.size = 0
+        self.file_num = 0
+        self.folder_num = 0
+        self.is_over = False
+        self.permission_error = False
+
+
 # WXのインプットダイアログ
 def wx_input_dialog(msg):
     dlg = wx.TextEntryDialog(None, msg)
