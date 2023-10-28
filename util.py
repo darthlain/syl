@@ -1,8 +1,9 @@
-import os, sys, copy, wx, platform
+import os, sys, copy, wx, platform, pygame, chardet
 from pygame.locals import *
 from pathlib import Path as _Path
 
 
+# pygame用のキーインプットクラス
 class Input:
 
     def __init__(self):
@@ -42,6 +43,7 @@ class Input:
         self.frozen = False
 
 
+# パス用クラス
 class Path:
 
     def __init__(self, path = '.'):
@@ -81,6 +83,60 @@ class Path:
     def relative(self, path):
         return os.path.relpath(str(self.path), str(path))
 
+# ファイルリスト
+class FilerFileList:
+
+    def __init__(self, side = None, history = None):
+        self.filelist = FileList('.')
+        self.line = 0
+        self.scroll = 0
+        self.side = side
+        self.select = []
+        self.history = history
+        self.fileinfo_flag = False
+
+    def path(self):
+        return self.filelist.path
+
+    def __len__(self):
+        return len(self.filelist)
+
+    def __getitem__(self, i):
+        return self.filelist[i]
+
+    def get_all(self):
+        return [self.__getitem__(i) for i in range(self.__len__())]
+
+    def chdir(self, path = str(Path('.'))):
+        self.history.set(self.filelist.path, self.line, self.scroll)
+
+        a = self.history.get(path)
+        if a:
+            self.line = a.line
+            self.scroll = a.scroll
+        else:
+            self.line = 0
+            self.scroll = 0
+
+        self.select = []
+        self.filelist = FileList(str(path))
+
+    def is_empty(self):
+        return self.filelist.is_empty()
+
+    def displayed_item(self, i):
+        if i < len(self.filelist) - self.scroll:
+            return self.filelist[i + self.scroll]
+        else:
+            return None
+
+    def line_item(self):
+        if self.is_empty():
+            return None
+        else:
+            return self.filelist[self.line + self.scroll]
+
+# os.scandirのラッパー？
 class FileList:
 
     def __init__(self, path = '.'):
@@ -102,6 +158,7 @@ class FileList:
     def is_empty(self):
         return len(self) == 0
 
+# os.scandirの要素のラッパー？
 class FileListItem:
 
     def __init__(self, parent):
@@ -125,13 +182,46 @@ class FileListItem:
     def size(self):
         return self.item.stat().st_size
 
+# 履歴用のクラス
+class History:
 
+    def __init__(self, d = dict()):
+        self.dict = d
+
+    def set(self, path, line = 0, scroll = 0):
+        self.dict[str(path)] = HistoryItem(line, scroll)
+
+    def get(self, path):
+        return self.dict.get(str(path))
+
+# 履歴の要素のクラス？
+class HistoryItem:
+
+    def __init__(self, line = 0, scroll = 0):
+        self.line = line
+        self.scroll = scroll
+
+# 拡張子実行用のクラス
+class ExtCommand:
+
+    def __init__(self):
+        self.dict = dict()
+
+    def set(self, ext, fn):
+        self.dict[ext] = fn
+
+    def get(self, ext):
+        return self.dict.get(ext)
+
+
+# WXのインプットダイアログ
 def wx_input_dialog(msg):
     dlg = wx.TextEntryDialog(None, msg)
     result = dlg.ShowModal()
     dlg.Destroy()
     return result != wx.ID_CANCEL and dlg.GetValue()
 
+# WXのYESNOダイアログ
 def wx_question_dialog(msg):
     dlg = wx.MessageDialog(None, msg, '', wx.YES_NO | wx.CANCEL)
     val = dlg.ShowModal()
@@ -142,9 +232,11 @@ def wx_question_dialog(msg):
     else:
         return False
 
+# windowsかどうか
 def is_windows():
     return platform.system() == 'Windows'
 
+# linuxかどうか
 def is_linux():
     return platform.system() == 'Linux'
 
@@ -167,3 +259,8 @@ def filesize_format(size):
         a = 1
         b = 'B'
     return '%s %s' % (str(round(size / a, 2)), b)
+
+# 文字コードを推測
+def charcode(path):
+    with open(path, 'rb') as f:
+        return chardet.detect(f.read())['encoding']

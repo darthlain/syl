@@ -1,31 +1,36 @@
 
 ### だいなファイラのパクリ
 
+### 重要な関数リスト
+# set_keybind
+# current_filelist().line_item()
+# display_filer 描写
+
+
+# テキストビュワー執筆中 やる気がわかない
+
 # Win+d2回押したあとに操作するとエラー音がうるさい
-# とりあえず画像関係は全部書き直し
 
+# 半透明できないかなあ ウインドウの縁を巻き込みたくないが難しそう
 
+# 権限がないフォルダにアクセスすると落ちる
 
-
-
-
-
-
-
-
-
+# シンボリックリンクなどの挙動
 
 
 
 
 ################################################################################
 
-import os, sys, pygame, wx, util, subprocess, shutil
+# 標準
+import os, sys, subprocess, shutil
+
+# 外部ライブラリ
+import pygame, wx, send2trash
 from pygame.locals import *
 
-from util import Input
-from util import Input, FileList
-from filer import FilerFileList, History, ExtCommand
+#
+import util
 
 # infoのフォルダのファイル数やサイズ等の調査のための構造体
 class FolderSearch:
@@ -39,9 +44,46 @@ class FolderSearch:
 
 class Main:
 
+    def set_keybind(self):
+        self.always_input.set([K_ESCAPE],              self.quit)
+
+        self.normal_input.set([K_TAB],                 lambda: self.sidetoggle())
+        self.normal_input.set([K_j],                   lambda: self.down(self.current_filelist()))
+        self.normal_input.set([K_k],                   lambda: self.up(self.current_filelist()))
+        self.normal_input.set([K_g],                   lambda: self.top(self.current_filelist()))
+        self.normal_input.set([K_g, 'shift'],          lambda: self.bottom(self.current_filelist()))
+        self.normal_input.set([K_h],                   lambda: self.back(self.current_filelist()))
+        self.normal_input.set([K_l],                   lambda: self.enter(self.current_filelist()))
+        self.normal_input.set([K_g, 'ctrl'],           lambda: self.goto(self.current_filelist()))
+        self.normal_input.set([K_v],                   lambda: self.open(self.current_filelist()))
+        self.normal_input.set([K_o],                   lambda: self.sideopen())
+        self.normal_input.set([K_w],                   lambda: self.mkdir(self.current_filelist()))
+        self.normal_input.set([K_r],                   lambda: self.rename(self.current_filelist()))
+        self.normal_input.set([K_d, 'shift'],          lambda: self.duplicate(self.current_filelist()))
+        self.normal_input.set([K_d],                   lambda: self.trash(self.current_filelist()))
+        self.normal_input.set([K_m],                   lambda: self.move(self.current_filelist(), self.nocurrent_filelist()))
+        self.normal_input.set([K_c],                   lambda: self.copy(self.current_filelist(), self.nocurrent_filelist()))
+        self.normal_input.set([K_SPACE],               lambda: self.select_down(self.current_filelist()))
+        self.normal_input.set([K_SPACE, 'shift'],      lambda: self.select_up(self.current_filelist()))
+        self.normal_input.set([K_x],                   lambda: self.select_clear(self.current_filelist()))
+        self.normal_input.set([K_a, 'shift'],          lambda: self.select_all(self.current_filelist()))
+        self.normal_input.set([K_a],                   lambda: self.select_all_file(self.current_filelist()))
+        self.normal_input.set([K_SEMICOLON],           lambda: self.linearg_command(self.current_filelist()))
+        self.normal_input.set([K_SEMICOLON, 'shift'],  lambda: self.command())
+        self.normal_input.set([K_i],                   lambda: self.fileinfo_dialog(self.current_filelist()))
+        self.normal_input.set([K_h, 'shift'],          lambda: self.screen_top(self.current_filelist()))
+        self.normal_input.set([K_m, 'shift'],          lambda: self.screen_middle(self.current_filelist()))
+        self.normal_input.set([K_l, 'shift'],          lambda: self.screen_bottom(self.current_filelist()))
+
+        # self.image_input.set([K_j],                    lambda: self.image_down(self.current_filelist()))
+        # self.image_input.set([K_k],                    lambda: self.image_up(self.current_filelist()))
+        self.image_input.set([K_h],                    lambda: self.image_back())
+
+        self.textview_input.set([K_h],                 lambda: self.textview_back())
+
+    # 事前にいじれる変数 オプション
     def __init__(self):
 
-        # Options
         self.color_bg     = (0,0,0)
         self.color_fg     = (255,255,255)
         self.color_folder = (0,255,255)
@@ -51,53 +93,62 @@ class Main:
         self.color_info   = (0,255,0)
         self.color_frame  = (255,255,255)
 
+        self.debug = True
         self.scrolloff = 5
         self.font_name = 'C:/Windows/Fonts/msgothic.ttc'
         self.font_size = 12
         self.open_command = None
         self.temp = os.environ['TEMP']
         self.shell = 'nyagos -c'
-        # img_ext = ['bmp', 'png', 'jpg', 'jpeg', 'gif']
-        self.img_ext = []
+
+        # イメージビューワを使うかどうか
+        self.flag_img_mode = True
+
+        # イメージビューワの拡張子
+        self.img_ext = ['bmp', 'png', 'jpg', 'jpeg', 'gif']
+
+        # テキストビューワを使うかどうか
+        self.flag_txt_mode = True
+
+        # テキストビューワの拡張子
+        self.txt_ext = ['txt', 'ini', 'html', 'htm']
+
         self.init_path = '~/Desktop'
         self.message_show = 4
 
-        self.mode_filer_str = 'NORMAL'
+        self.mode_normal_str = 'NORMAL'
         self.mode_image_str = 'IMAGE'
+        self.mode_textview_str = 'TEXTVIEW'
 
         self.upinfo_show = 2 # ファイルリスト上の情報の行数
         self.downinfo_show = 1
 
-        #
+    # メイン
+    def main(self):
+
         pygame.init()
-
-
+        self.mode = self.mode_normal_str
         self.screen = pygame.display.set_mode((600, 400), RESIZABLE)
         pygame.key.set_repeat(500, 35)
         self.clock = pygame.time.Clock()
         self.font = pygame.font.Font(self.font_name, self.font_size)
         self.wx_app = wx.App()
-        self.always_input = Input()
-        self.normal_input = Input()
-        self.image_input = Input()
+        self.always_input = util.Input()
+        self.normal_input = util.Input()
+        self.image_input = util.Input()
+        self.textview_input = util.Input()
+        self.ext = util.ExtCommand()
+        self.ext_do_init()
         self.set_keybind()
         self.input = self.always_input + self.normal_input
-        self.history = History()
-        self.left_filelist = FilerFileList(mode = self.mode_filer_str, side = 'left', history = self.history)
-        self.right_filelist = FilerFileList(mode = self.mode_filer_str, side = 'right', history = self.history)
+        self.history = util.History()
+        self.left_filelist = util.FilerFileList(side = 'left', history = self.history)
+        self.right_filelist = util.FilerFileList(side = 'right', history = self.history)
         self.side = 'left'
-        self.ext = ExtCommand()
 
         if self.init_path:
             self.left_filelist.chdir(self.init_path)
 
-    # 終了するときに起動するやつ
-    def quit(self):
-        pygame.quit()
-        sys.exit()
-
-    # メインループ
-    def main(self):
         while 1:
             self.fill(self.color_bg)
 
@@ -112,8 +163,38 @@ class Main:
                 if event.type == KEYDOWN:
                     self.input.get(event)
 
+                    # ここで時間がかかるイベント中に入力されたキーイベントを枯らす
+                    pygame.event.get()
+
             # これがないとCPUが暴走する
             self.clock.tick(60)
+
+    # 拡張子に応じてなんらかのアクションを取る機能のinit
+    def ext_do_init(self):
+        if self.flag_img_mode:
+            for i in self.img_ext:
+                self.ext.set(i, self.image_mode)
+
+        if self.flag_txt_mode:
+            for i in self.txt_ext:
+                self.ext.set(i, self.textview_mode)
+
+
+
+
+################################################################################
+# ここまで更新される可能性が高いもの
+################################################################################
+
+
+
+
+
+
+    # 終了するときに起動するやつ
+    def quit(self):
+        pygame.quit()
+        sys.exit()
 
     # ウインドウサイズを取得
     def screen_size(self):
@@ -191,6 +272,10 @@ class Main:
     # + 1 は後付でとりあえず入れておいたがどうだろうか
     def filelist_y0pos(self):
         return self.font_size * self.upinfo_show + 1
+
+    # ファイルリストのyの最後+1の位置 要するに線の位置
+    def filelist_yepos(self):
+        return self.screen_size()[1] - self.font_size * (self.downinfo_show + self.message_show)
 
     # ファイルリストのラインを表示する
     def display_filelist_line(self, filelist):
@@ -271,16 +356,16 @@ class Main:
         self.echo_filelist(self.right_filelist)
         self.display_filelist_line(self.current_filelist())
 
-        # これなんやろ
-        if self.current_filelist().mode == self.mode_image_str:
-            self.display_filelist_line(self.nocurrent_filelist())
-
         if self.left_filelist.fileinfo_flag:
             self.display_fileinfo(self.left_filelist, self.right_filelist)
         if self.right_filelist.fileinfo_flag:
             self.display_fileinfo(self.right_filelist, self.left_filelist)
 
-        # self.image_draw()
+        if self.mode == self.mode_image_str:
+            self.image_view()
+
+        if self.mode == self.mode_textview_str:
+            self.textview_view()
 
     # 非アクティブのファイルリストがあるところにファイル情報を表示するらしい
     # 下のと被ってるし いらないんじゃないか
@@ -413,7 +498,7 @@ class Main:
             count += 1
 
             if item.is_dir():
-                a = FileList(item.path())
+                a = util.FileList(item.path())
                 if first and a.permission_error:
                     acc.permission_error = True
                 for i in a:
@@ -437,41 +522,8 @@ class Main:
     def set_image_keybind(self):
         self.input = self.always_input + self.image_input
 
-    def set_keybind(self):
-        self.always_input.set([K_ESCAPE],              self.quit)
-
-        self.normal_input.set([K_TAB],                 lambda: self.sidetoggle())
-        self.normal_input.set([K_j],                   lambda: self.down(self.current_filelist()))
-        self.normal_input.set([K_k],                   lambda: self.up(self.current_filelist()))
-        self.normal_input.set([K_g],                   lambda: self.top(self.current_filelist()))
-        self.normal_input.set([K_g, 'shift'],          lambda: self.bottom(self.current_filelist()))
-        self.normal_input.set([K_h],                   lambda: self.back(self.current_filelist()))
-        self.normal_input.set([K_l],                   lambda: self.enter(self.current_filelist()))
-        self.normal_input.set([K_g, 'ctrl'],           lambda: self.goto(self.current_filelist()))
-        self.normal_input.set([K_v],                   lambda: self.open(self.current_filelist()))
-        self.normal_input.set([K_o],                   lambda: self.sideopen())
-        self.normal_input.set([K_w],                   lambda: self.mkdir(self.current_filelist()))
-        self.normal_input.set([K_r],                   lambda: self.rename(self.current_filelist()))
-        self.normal_input.set([K_d, 'shift'],          lambda: self.duplicate(self.current_filelist()))
-        self.normal_input.set([K_d],                   lambda: self.trash(self.current_filelist()))
-        self.normal_input.set([K_m],                   lambda: self.move(self.current_filelist(), self.nocurrent_filelist()))
-        self.normal_input.set([K_c],                   lambda: self.copy(self.current_filelist(), self.nocurrent_filelist()))
-        self.normal_input.set([K_SPACE],               lambda: self.select_down(self.current_filelist()))
-        self.normal_input.set([K_SPACE, 'shift'],      lambda: self.select_up(self.current_filelist()))
-        self.normal_input.set([K_x],                   lambda: self.select_clear(self.current_filelist()))
-        self.normal_input.set([K_a, 'shift'],          lambda: self.select_all(self.current_filelist()))
-        self.normal_input.set([K_a],                   lambda: self.select_all_file(self.current_filelist()))
-        self.normal_input.set([K_SEMICOLON],           lambda: self.linearg_command(self.current_filelist()))
-        self.normal_input.set([K_SEMICOLON, 'shift'],  lambda: self.command())
-        self.normal_input.set([K_i],                   lambda: self.fileinfo_dialog(self.current_filelist()))
-        self.normal_input.set([K_h, 'shift'],          lambda: self.screen_top(self.current_filelist()))
-        self.normal_input.set([K_m, 'shift'],          lambda: self.screen_middle(self.current_filelist()))
-        self.normal_input.set([K_l, 'shift'],          lambda: self.screen_bottom(self.current_filelist()))
-
-        # self.image_input.set([K_TAB],                  lambda: self.sidetoggle())
-        # self.image_input.set([K_j],                    lambda: self.image_down(self.current_filelist()))
-        # self.image_input.set([K_k],                    lambda: self.image_up(self.current_filelist()))
-        # self.image_input.set([K_h],                    lambda: self.image_back(self.current_filelist()))
+    def set_textview_keybind(self):
+        self.input = self.always_input + self.textview_input
 
     # up downで使うやつ
     def _scrolloff(self):
@@ -548,7 +600,7 @@ class Main:
         else:
             a = self.ext.get(filelist.line_item().ext())
             if a:
-                a(filelist.line_item())
+                a()
 
     def goto(self, filelist):
         a = util.wx_input_dialog('goto?')
@@ -676,6 +728,91 @@ class Main:
 
     def fileinfo_dialog(self, filelist):
         util.wx_question_dialog('\n'.join(self.fileinfo_list(filelist)))
+
+    # 画像読み込み
+    def image_load(self, path):
+        self.pygame_image = pygame.image.load(path)
+
+    def image_size(self):
+        return self.pygame_image.get_rect().size
+
+    # 画像領域のサイズ
+    def image_zone_size(self):
+        return self.half_screen_size()[0], self.filelist_yepos()
+
+    # 画像領域の0の位置
+    def image_zone_0pos(self):
+        return self.filelist_left0pos(self.nocurrent_filelist().side), 0
+
+    # 画像表示
+    def image_view(self):
+        self.square(self.color_bg, self.image_zone_0pos(), self.image_zone_size())
+        self.screen.blit(self.pygame_image, self.image_pos)
+
+    # 画像モードに移行
+    def image_mode(self):
+        if self.debug:
+            self.message('debug: image mode on')
+
+        self.mode = self.mode_image_str
+        self.set_image_keybind()
+        self.image_load(str(self.current_filelist().line_item().path()))
+
+        a = self.image_size()
+        b = self.image_zone_size()
+        x0 = self.filelist_left0pos(self.nocurrent_filelist().side)
+        x1 = self.screen_size()[0] // 4
+        y1 = self.filelist_yepos() // 2
+
+        # 画像が画像領域サイズより小さいか同じ場合
+        if a[0] <= b[0] and a[1] <= b[1]:
+            pass
+        # 大きい場合はリサイズする
+        else:
+            # 画像 横のほうが大きい場合
+            if self.image_size()[0] >= self.image_size()[1]:
+                r = self.image_zone_size()[0] / self.image_size()[0]
+            else:
+                r = self.image_zone_size()[1] / self.image_size()[1]
+
+            new = self.image_size()[0] * r, self.image_size()[1] * r
+
+            self.pygame_image = pygame.transform.smoothscale(self.pygame_image, new) 
+
+        x2 = self.image_size()[0] // 2
+        y2 = self.image_size()[1] // 2
+
+        self.image_pos = x0 + x1 - x2, y1 - y2
+
+    # 画像モードから抜ける
+    def image_back(self):
+        self.mode = self.mode_normal_str
+        self.set_normal_keybind()
+        if self.debug:
+            self.message('debug: image mode off')
+
+    # テキストビュワーに入る
+    def textview_mode(self):
+        if self.debug:
+            self.message('debug: textviewer mode on')
+
+        self.mode = self.mode_textview_str
+        self.set_textview_keybind()
+
+        self.textview_path = self.current_filelist().line_item().path()
+        self.textview_charcode = util.charcode(str(self.textview_path))
+        with open(str(self.textview_path), encoding = self.textview_charcode) as f:
+            self.textview_text = f.read()
+
+    # テキストビュワーから抜ける
+    def textview_back(self):
+        self.mode = self.mode_normal_str
+        self.set_normal_keybind()
+        if self.debug:
+            self.message('debug: textview mode off')
+
+    def textview_view(self):
+        self.fill(self.color_bg)
 
 a = Main()
 
