@@ -8,10 +8,16 @@
 
 
 # テキストビュワー執筆中 やる気がわかない
+# 効率よくなさげなので高速化
+# 行折返しするとき行番号がリピートされる
+# 実装 今のままじゃ遅いので改善したい
+# ループのたびに文章作ってるのは良くない気がする
+# ウィンドウの大きさが変更されたら察知してリストを作り直すのは… 遅いか
 
 # Win+d2回押したあとに操作するとエラー音がうるさい
 
 # 半透明できないかなあ ウインドウの縁を巻き込みたくないが難しそう
+# 追記 なんかすごいいい感じでできるっぽい pywin32
 
 # 権限がないフォルダにアクセスすると落ちる
 
@@ -72,6 +78,10 @@ class Syl:
         self.image_input.set([K_h],                    lambda: self.image_back())
 
         self.textview_input.set([K_h],                 lambda: self.textview_back())
+        self.textview_input.set([K_j],                 lambda: self.textview_down())
+        self.textview_input.set([K_k],                 lambda: self.textview_up())
+        self.textview_input.set([K_g],                 lambda: self.textview_top())
+        self.textview_input.set([K_g, 'shift'],        lambda: self.textview_bottom())
 
     # 事前にいじれる変数 オプション
     def __init__(self):
@@ -85,6 +95,7 @@ class Syl:
         self.color_info   = (0,255,0)
         self.color_frame  = (255,255,255)
         self.color_stbar  = (240,240,240) # ステータスバー
+        self.color_txtnum = (0, 255, 255) # テキストビュワー行番号
 
         self.debug = True
         self.scrolloff = 5
@@ -799,7 +810,7 @@ class Syl:
         self.textview_path = self.current_filelist().line_item().path()
         self.textview_charcode = util.charcode(str(self.textview_path))
         with open(str(self.textview_path), encoding = self.textview_charcode) as f:
-            self.textview_text = f.readlines()
+            self.textview_text = f.read().splitlines()
         self.textview_line = 0
         self.textview_num = len(self.textview_text)
 
@@ -812,13 +823,61 @@ class Syl:
 
     # テキストビュワー テキスト部の表示行数
     def textview_mainshow(self):
-        return self.charshow()[1] - 1
+        return len(str(len(self.textview_text))) + 1, self.char_show()[1] - 1
 
+    # 行番号
+    def textview_mainleft(self, i):
+        return format(i, '-' + str(self.textview_mainshow()[0])).replace('-', ' ')
+
+    # テキストビュワー 表示部
+    # たぶんかなりガバガバなのでリファクタリングしたい
     def textview_view(self):
         self.fill(self.color_bg)
         self.square(self.color_stbar, 
                     (0, self.screen_size()[1] - self.font_size),
                     (self.screen_size()[0], self.font_size))
+
+        t = min(self.textview_mainshow()[1], self.textview_num)
+        l = self.textview_line
+        n = 0 # 処理行
+        m = 0 # 表示上の処理行
+
+        while 1:
+
+            if n >= t or n >= len(self.textview_text):
+                break
+
+            o = util.onerow(self.textview_text[l], self.char_show()[0])
+            lr = len(o) # 表示上の行 現在ループ
+
+            self.echo(self.color_txtnum, (0, self.font_size * m), self.textview_mainleft(l + 1))
+            for i in range(len(o)):
+                self.echo(self.color_fg,
+                          (self.font_size / 2 * (len(str(len(self.textview_text))) + 1), self.font_size * m),
+                          o[i])
+                m += 1
+            n += 1
+            l += 1
+
+    def textview_up(self):
+        self.textview_line -= 1
+
+        if self.textview_line < 0:
+            self.textview_line = 0
+
+    def textview_down(self):
+        self.textview_line += 1
+        e = max(0, len(self.textview_text) - self.textview_mainshow()[1])
+
+        if self.textview_line >= e:
+            self.textview_line = e
+
+    def textview_top(self):
+        self.textview_line = 0
+
+    def textview_bottom(self):
+        self.textview_line = len(self.textview_text) - self.textview_mainshow()[1]
+
 
 if __name__ == '__main__':
     a = Syl()

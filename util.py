@@ -1,4 +1,4 @@
-import os, sys, copy, wx, platform, pygame, chardet
+import os, sys, copy, wx, platform, pygame, chardet, unicodedata
 from pygame.locals import *
 from pathlib import Path as _Path
 
@@ -275,3 +275,41 @@ def filesize_format(size):
 def charcode(path):
     with open(path, 'rb') as f:
         return chardet.detect(f.read())['encoding']
+
+# 一行分
+def onerow(s, lim = 80):
+
+    if s == '':
+        return ['']
+
+    acc = 0
+    acc2 = ''
+    acc3 = False
+    acc4 = []
+
+    for i in range(len(s)):
+
+        if unicodedata.east_asian_width(s[i]) in 'FWA':
+            acc3 = True
+        else:
+            acc3 = False
+
+        if acc3:
+            acc += 2
+        else:
+            acc += 1
+
+        if lim < acc:
+            if acc3:
+                acc = 2
+            else:
+                acc = 1
+            acc4.append(acc2)
+            acc2 = ''
+
+        acc2 += s[i]
+
+    if acc2 != '':
+        acc4.append(acc2)
+
+    return acc4
