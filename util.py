@@ -276,6 +276,7 @@ def charcode(path):
     with open(path, 'rb') as f:
         return chardet.detect(f.read())['encoding']
 
+
 # 一行分
 def onerow(s, lim = 80):
 

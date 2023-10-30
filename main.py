@@ -1,5 +1,5 @@
 
-### だいなファイラのパクリ
+### だいなファイラっぽいファイラを作りたかった
 
 ### 重要な関数リスト
 # set_keybind
@@ -7,12 +7,17 @@
 # display_filer 描写
 
 
-# テキストビュワー執筆中 やる気がわかない
+# テキストビュワー
 # 効率よくなさげなので高速化
 # 行折返しするとき行番号がリピートされる
-# 実装 今のままじゃ遅いので改善したい
-# ループのたびに文章作ってるのは良くない気がする
-# ウィンドウの大きさが変更されたら察知してリストを作り直すのは… 遅いか
+# 実装 今のままじゃ遅いので改善したい -> 十分早いかもしれないが
+# マウス操作にも対応したい ドラッグ対応 きつくないか？
+# 行を覚えとくやつも実装したい
+# タブ文字が四角になる
+# マウススクロールで移動できるようにしたい
+# バイナリっぽいファイルを開くと落ちる
+# 行折り返しするときに行番号がおかしい
+# 最後の行が見えているときにウインドウを大きくすると落ちる
 
 # Win+d2回押したあとに操作するとエラー音がうるさい
 
@@ -72,9 +77,11 @@ class Syl:
         self.normal_input.set([K_h, 'shift'],          lambda: self.screen_top(self.current_filelist()))
         self.normal_input.set([K_m, 'shift'],          lambda: self.screen_middle(self.current_filelist()))
         self.normal_input.set([K_l, 'shift'],          lambda: self.screen_bottom(self.current_filelist()))
+        self.normal_input.set([K_e, 'ctrl'],           lambda: self.textview_mode())
+        self.normal_input.set([K_e],                   lambda: self.editor_open())
 
-        # self.image_input.set([K_j],                    lambda: self.image_down(self.current_filelist()))
-        # self.image_input.set([K_k],                    lambda: self.image_up(self.current_filelist()))
+        self.image_input.set([K_j],                    lambda: self.image_down())
+        self.image_input.set([K_k],                    lambda: self.image_up())
         self.image_input.set([K_h],                    lambda: self.image_back())
 
         self.textview_input.set([K_h],                 lambda: self.textview_back())
@@ -115,9 +122,18 @@ class Syl:
         self.flag_txt_mode = True
 
         # テキストビューワの拡張子
-        self.txt_ext = ['txt', 'ini', 'html', 'htm']
+        self.txt_ext = ['txt', 'ini', 'py', 'sh']
 
-        self.init_path = '~/Desktop'
+        # ファイル名の最初に.があるファイルをドットファイルとみなしてテキストビューワで開く
+        self.txt_dotfile = True
+
+        # テキストビューワの行番号 最低でもn桁分開けておく
+        self.txt_minnum = 3
+
+        # テキストエディターのパス
+        self.editor_path = util.Path('~/desktop/tool/vim-kaoriya-win64/gvim.exe --remote-tab-silent')
+
+        self.init_path = '~/onedrive/'
         self.message_show = 4
 
         self.mode_normal_str = 'NORMAL'
@@ -606,6 +622,8 @@ class Syl:
         if filelist.line_item().is_dir():
             filelist.chdir(str(filelist.line_item().path()))
         else:
+            if self.txt_dotfile and filelist.line_item().name()[0] == '.':
+                self.textview_mode()
             a = self.ext.get(filelist.line_item().ext())
             if a:
                 a()
@@ -759,7 +777,7 @@ class Syl:
 
     # 画像モードに移行
     def image_mode(self):
-        if self.debug:
+        if self.mode == self.mode_normal_str and self.debug:
             self.message('debug: image mode on')
 
         self.mode = self.mode_image_str
@@ -799,18 +817,36 @@ class Syl:
         if self.debug:
             self.message('debug: image mode off')
 
+    def image_up(self):
+        if self.up(self.current_filelist()):
+            if self.current_filelist().line_item().ext() in self.img_ext:
+                self.image_mode()
+
+    def image_down(self):
+        if self.down(self.current_filelist()):
+            if self.current_filelist().line_item().ext() in self.img_ext:
+                self.image_mode()
+
     # テキストビュワーに入る
     def textview_mode(self):
-        if self.debug:
-            self.message('debug: textview mode on')
-
-        self.mode = self.mode_textview_str
-        self.set_textview_keybind()
+        if self.current_filelist().line_item().is_dir():
+            self.message('textview: フォルダは開けません')
+            return
 
         self.textview_path = self.current_filelist().line_item().path()
-        self.textview_charcode = util.charcode(str(self.textview_path))
+
+        try:
+            self.textview_charcode = util.charcode(str(self.textview_path))
+        except PermissionError:
+            self.message('textview: Permission Denied')
+            return
+
         with open(str(self.textview_path), encoding = self.textview_charcode) as f:
             self.textview_text = f.read().splitlines()
+        if self.debug:
+            self.message('debug: textview mode on')
+        self.mode = self.mode_textview_str
+        self.set_textview_keybind()
         self.textview_line = 0
         self.textview_num = len(self.textview_text)
 
@@ -823,14 +859,17 @@ class Syl:
 
     # テキストビュワー テキスト部の表示行数
     def textview_mainshow(self):
-        return len(str(len(self.textview_text))) + 1, self.char_show()[1] - 1
+        return self.textview_numstrlen(), self.char_show()[1] - 1
 
-    # 行番号
+    # 行番号 最低でも3は開けるらしい
     def textview_mainleft(self, i):
-        return format(i, '-' + str(self.textview_mainshow()[0])).replace('-', ' ')
+        return format(i, '-' + str(max(self.txt_minnum, self.textview_mainshow()[0]))).replace('-', ' ')
+
+    # 行番号の文字長さ
+    def textview_numstrlen(self):
+        return len(str(len(self.textview_text)))
 
     # テキストビュワー 表示部
-    # たぶんかなりガバガバなのでリファクタリングしたい
     def textview_view(self):
         self.fill(self.color_bg)
         self.square(self.color_stbar, 
@@ -847,13 +886,13 @@ class Syl:
             if n >= t or n >= len(self.textview_text):
                 break
 
-            o = util.onerow(self.textview_text[l], self.char_show()[0])
-            lr = len(o) # 表示上の行 現在ループ
-
+            o = util.onerow(self.textview_text[l], self.char_show()[0] - max(self.textview_numstrlen(), self.txt_minnum) - 1)
             self.echo(self.color_txtnum, (0, self.font_size * m), self.textview_mainleft(l + 1))
+
             for i in range(len(o)):
                 self.echo(self.color_fg,
-                          (self.font_size / 2 * (len(str(len(self.textview_text))) + 1), self.font_size * m),
+                          (self.font_size / 2 * max(self.txt_minnum + 1,
+                           self.textview_numstrlen() + 1), self.font_size * m),
                           o[i])
                 m += 1
             n += 1
@@ -877,6 +916,10 @@ class Syl:
 
     def textview_bottom(self):
         self.textview_line = len(self.textview_text) - self.textview_mainshow()[1]
+
+    # 設定したエディタで開く
+    def editor_open(self):
+        subprocess.run('%s %s' % (str(self.editor_path), self.current_filelist().line_item().path()), shell = True)
 
 
 if __name__ == '__main__':
