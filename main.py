@@ -6,6 +6,7 @@
 # current_filelist().line_item()
 # display_filer 描写
 
+# もうあきた migemoくらいは実装したいが
 
 # テキストビュワー
 # 効率よくなさげなので高速化
@@ -18,6 +19,8 @@
 # バイナリっぽいファイルを開くと落ちる
 # 行折り返しするときに行番号がおかしい
 # 最後の行が見えているときにウインドウを大きくすると落ちる
+# 高速化について 遅延評価導入すればいいかも しらんけど
+# まあ今のままでも一生困らないだろうが
 
 # Win+d2回押したあとに操作するとエラー音がうるさい
 
@@ -30,16 +33,24 @@
 
 # 内蔵ビュワー gifを開くと落ちる
 
+# 今のところdebug messageが形骸化している まあメッセージ一杯出てもうざいだけかもだが
+
+# 文字表示の余白がないせいでアンダースコアが映らない
+
+# keyboardinput 戻るときescape どうするか
+
+# textinput難しそう enter押して初めて起動するか何か押したたびに起動するか
+
 
 
 
 ################################################################################
 
 # 標準
-import os, sys, subprocess, shutil
+import os, sys, subprocess, shutil, re, collections
 
 # 外部ライブラリ
-import pygame, wx, send2trash
+import pygame, wx, send2trash, migemo, jaconv
 from pygame.locals import *
 
 #
@@ -79,6 +90,8 @@ class Syl:
         self.normal_input.set([K_l, 'shift'],          lambda: self.screen_bottom(self.current_filelist()))
         self.normal_input.set([K_e, 'ctrl'],           lambda: self.textview_mode())
         self.normal_input.set([K_e],                   lambda: self.editor_open())
+        self.normal_input.set([K_SLASH],               lambda: self.migemo_search())
+        self.normal_input.set([K_f],                   lambda: self.textinput_mode())
 
         self.image_input.set([K_j],                    lambda: self.image_down())
         self.image_input.set([K_k],                    lambda: self.image_up())
@@ -89,6 +102,10 @@ class Syl:
         self.textview_input.set([K_k],                 lambda: self.textview_up())
         self.textview_input.set([K_g],                 lambda: self.textview_top())
         self.textview_input.set([K_g, 'shift'],        lambda: self.textview_bottom())
+
+        self.textinput_cmd.set([K_ESCAPE],             lambda: self.textinput_back())
+        self.migemo_search_cmd.set([K_n, 'ctrl'],      lambda: self.migemo_search_next())
+        self.migemo_search_cmd.set([K_p, 'ctrl'],      lambda: self.migemo_search_prev())
 
     # 事前にいじれる変数 オプション
     def __init__(self):
@@ -140,8 +157,11 @@ class Syl:
         self.mode_image_str = 'IMAGE'
         self.mode_textview_str = 'TEXTVIEW'
 
+        # migemo n文字から検索を始める
+        self.migemo_min = 2
+
         self.upinfo_show = 2 # ファイルリスト上の情報の行数
-        self.downinfo_show = 1
+        self.downinfo_show = 2
 
     # メイン
     def main(self):
@@ -157,6 +177,11 @@ class Syl:
         self.normal_input = util.Input()
         self.image_input = util.Input()
         self.textview_input = util.Input()
+        self.textinput_cmd = util.Input()
+        self.migemo_search_cmd = util.Input()
+        self.migemo_ins = migemo.Migemo()
+        self.migemo_stop = collections.defaultdict(lambda: 0) # migemoそこまで検索したというやつ
+        self.migemo_query = None
         self.ext = util.ExtCommand()
         self.ext_do_init()
         self.set_keybind()
@@ -165,6 +190,9 @@ class Syl:
         self.left_filelist = util.FilerFileList(side = 'left', history = self.history)
         self.right_filelist = util.FilerFileList(side = 'right', history = self.history)
         self.side = 'left'
+        self.textinput = util.PygameKeyboardInput()
+        self.textinput_flag = False
+        self.search_range_save = None
 
         if self.init_path:
             self.left_filelist.chdir(self.init_path)
@@ -297,10 +325,6 @@ class Syl:
     def filelist_yepos(self):
         return self.screen_size()[1] - self.font_size * (self.downinfo_show + self.message_show)
 
-    # 画面上の行の位置 下から
-    def display_ycharpos_end(self, i):
-        return self.screen_size()[1] - self.font_size * i
-
     # ファイルリストのラインを表示する
     def display_filelist_line(self, filelist):
         p = self.filelist_left0pos(filelist.side)
@@ -367,14 +391,19 @@ class Syl:
         # ファイルリスト下線
         self.line(self.color_frame,
                   (0, self.screen_size()[1] - d), (self.screen_size()[0], self.screen_size()[1] - d))
-        # メッセージ下線
+        # メッセージ下 白枠
         self.square(self.color_stbar,
                     (0, self.screen_size()[1] - self.font_size * self.downinfo_show),
-                    (self.screen_size()[0], self.screen_size()[1]))
+                    (self.screen_size()[0], self.font_size))
         # 最下インフォ ファイル名
         if not self.current_filelist().is_empty():
             self.echo(self.color_bg,
-                      (0, self.screen_size()[1] - self.font_size), self.current_filelist().line_item().name())
+                      (0, self.screen_size()[1] - self.font_size * 2), self.current_filelist().line_item().name())
+
+        # textinputモードがONのとき文字表示
+        if self.textinput_flag:
+            self.echo(self.color_fg,
+                      (0, self.screen_size()[1] - self.font_size), self.textinput_left + self.textinput.data)
 
         self.echo_select(self.right_filelist)
         self.echo_filelist(self.right_filelist)
@@ -549,6 +578,13 @@ class Syl:
     def set_textview_keybind(self):
         self.input = self.always_input + self.textview_input
 
+    def set_textinput_keybind(self):
+        self.input = self.always_input + self.textinput.input + self.textinput_cmd
+
+    def set_migemo_search_keybind(self):
+        self.input = self.always_input + self.textinput.input + self.migemo_search_cmd
+
+
     # up downで使うやつ
     def _scrolloff(self):
         return min(self.scrolloff, self.filelist_show() // 2)
@@ -556,7 +592,7 @@ class Syl:
     def down(self, filelist):
         a = False
 
-        if filelist.line + filelist.scroll < len(filelist) - 1:
+        if filelist.pos() < len(filelist) - 1:
             filelist.line += 1
             a = True
         
@@ -573,7 +609,7 @@ class Syl:
     def up(self, filelist):
         a = False
 
-        if filelist.line + filelist.scroll > 0:
+        if filelist.pos() > 0:
             filelist.line -= 1
             a = True
 
@@ -920,6 +956,75 @@ class Syl:
     # 設定したエディタで開く
     def editor_open(self):
         subprocess.run('%s %s' % (str(self.editor_path), self.current_filelist().line_item().path()), shell = True)
+
+    # searchのときに使用するiのリスト 現在位置を起点にその上が終点
+    def search_range(self):
+        a = self.current_filelist()
+        return list(range(a.pos(), len(a))) + list(range(0, a.pos()))
+
+    def migemo_search(self):
+        self.textinput.everyfn = self.migemo_search_fn
+        self.textinput.bsfn = self.migemo_bsfn
+        self.search_range_save = self.search_range()
+        self.textinput_left = 'migemo_search: '
+        self.textinput_flag = True
+        self.set_migemo_search_keybind()
+
+    # iの場所にファイルリスト カーソルを移動する
+    def goto_num(self, i):
+        a = self.current_filelist()
+        if a.pos() >= i:
+            for j in range(a.pos() - i):
+                self.up(a)
+        else:
+            for j in range(i - a.pos()):
+                self.down(a)
+
+    def migemo_search_fn(self):
+        if len(self.textinput.data) < self.migemo_min:
+            return
+        self.migemo_stop[len(self.textinput.data)] = self.migemo_stop[len(self.textinput.data) - 1]
+        self.migemo_query = self.migemo_ins.query(self.textinput.data)
+
+        for i in self.search_range_save[self.migemo_stop[len(self.textinput.data) - 1]:]:
+            b = jaconv.kata2hira(self.current_filelist()[i].name())
+            if re.search(self.migemo_query, b):
+                self.goto_num(i)
+                return
+            else:
+                self.migemo_stop[len(self.textinput.data)] += 1
+
+    def migemo_search_next(self):
+        print(self.migemo_stop)
+        if not self.migemo_query:
+            return
+
+        for i in self.search_range()[1:]:
+            b = jaconv.kata2hira(self.current_filelist()[i].name())
+            if re.search(self.migemo_query, b):
+                self.goto_num(i)
+                return
+
+    def migemo_search_prev(self):
+        if not self.migemo_query:
+            return
+
+        for i in reversed(self.search_range()[1:]):
+            b = jaconv.kata2hira(self.current_filelist()[i].name())
+            if re.search(self.migemo_query, b):
+                self.goto_num(i)
+                return
+            
+    # Backspaceを押したときに呼び出される関数
+    def migemo_bsfn(self):
+        print(len(self.textinput.data))
+        self.migemo_stop[len(self.textinput.data)] = 0
+
+    def textinput_back(self):
+        self.set_normal_keybind()
+        self.textinput_flag = False
+        self.textinput.reset()
+        self.message('debug: textinput mode off')
 
 
 if __name__ == '__main__':

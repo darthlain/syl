@@ -83,7 +83,7 @@ class Path:
     def relative(self, path):
         return os.path.relpath(str(self.path), str(path))
 
-# ファイルリスト
+# ファイルリスト リストそのものではなくファイラー機能的なやつ
 class FilerFileList:
 
     def __init__(self, side = None, history = None):
@@ -94,6 +94,9 @@ class FilerFileList:
         self.select = []
         self.history = history
         self.fileinfo_flag = False
+
+    def pos(self):
+        return self.scroll + self.line
 
     def path(self):
         return self.filelist.path
@@ -223,6 +226,140 @@ class FolderSearch:
         self.folder_num = 0
         self.is_over = False
         self.permission_error = False
+
+
+class PygameKeyboardInput:
+
+    def __init__(self):
+        self.input = Input()
+        self.set_keybind()
+        self.reset()
+
+    def reset(self):
+        self.data = ''
+        self.everyfn = None # タイプの度に呼び出される関数
+        self.enterfn = None # enterを押したときに呼び出される関数
+        self.bsfn = None    # backspaceを押したときに呼び出される関数
+
+    def backspace(self):
+        self.data = self.data[:-1]
+        if self.bsfn:
+            self.bsfn()
+
+    def call_enterfn(self):
+        if self.enterfn:
+            self.enterfn()
+
+    def add(self, a):
+        self.data += a
+        if self.everyfn:
+            self.everyfn()
+
+    def set_keybind(self, jp = True):
+        self.input.set([K_a], lambda: self.add('a'))
+        self.input.set([K_b], lambda: self.add('b'))
+        self.input.set([K_c], lambda: self.add('c'))
+        self.input.set([K_d], lambda: self.add('d'))
+        self.input.set([K_e], lambda: self.add('e'))
+        self.input.set([K_f], lambda: self.add('f'))
+        self.input.set([K_g], lambda: self.add('g'))
+        self.input.set([K_h], lambda: self.add('h'))
+        self.input.set([K_i], lambda: self.add('i'))
+        self.input.set([K_j], lambda: self.add('j'))
+        self.input.set([K_k], lambda: self.add('k'))
+        self.input.set([K_l], lambda: self.add('l'))
+        self.input.set([K_m], lambda: self.add('m'))
+        self.input.set([K_n], lambda: self.add('n'))
+        self.input.set([K_o], lambda: self.add('o'))
+        self.input.set([K_p], lambda: self.add('p'))
+        self.input.set([K_q], lambda: self.add('q'))
+        self.input.set([K_r], lambda: self.add('r'))
+        self.input.set([K_s], lambda: self.add('s'))
+        self.input.set([K_t], lambda: self.add('t'))
+        self.input.set([K_u], lambda: self.add('u'))
+        self.input.set([K_v], lambda: self.add('v'))
+        self.input.set([K_w], lambda: self.add('w'))
+        self.input.set([K_x], lambda: self.add('x'))
+        self.input.set([K_y], lambda: self.add('y'))
+        self.input.set([K_z], lambda: self.add('z'))
+
+        self.input.set([K_a, 'shift'], lambda: self.add('A'))
+        self.input.set([K_b, 'shift'], lambda: self.add('B'))
+        self.input.set([K_c, 'shift'], lambda: self.add('C'))
+        self.input.set([K_d, 'shift'], lambda: self.add('D'))
+        self.input.set([K_e, 'shift'], lambda: self.add('E'))
+        self.input.set([K_f, 'shift'], lambda: self.add('F'))
+        self.input.set([K_g, 'shift'], lambda: self.add('G'))
+        self.input.set([K_h, 'shift'], lambda: self.add('H'))
+        self.input.set([K_i, 'shift'], lambda: self.add('I'))
+        self.input.set([K_j, 'shift'], lambda: self.add('J'))
+        self.input.set([K_k, 'shift'], lambda: self.add('K'))
+        self.input.set([K_l, 'shift'], lambda: self.add('L'))
+        self.input.set([K_m, 'shift'], lambda: self.add('M'))
+        self.input.set([K_n, 'shift'], lambda: self.add('N'))
+        self.input.set([K_o, 'shift'], lambda: self.add('O'))
+        self.input.set([K_p, 'shift'], lambda: self.add('P'))
+        self.input.set([K_q, 'shift'], lambda: self.add('Q'))
+        self.input.set([K_r, 'shift'], lambda: self.add('R'))
+        self.input.set([K_s, 'shift'], lambda: self.add('S'))
+        self.input.set([K_t, 'shift'], lambda: self.add('T'))
+        self.input.set([K_u, 'shift'], lambda: self.add('U'))
+        self.input.set([K_v, 'shift'], lambda: self.add('V'))
+        self.input.set([K_w, 'shift'], lambda: self.add('W'))
+        self.input.set([K_x, 'shift'], lambda: self.add('X'))
+        self.input.set([K_y, 'shift'], lambda: self.add('Y'))
+        self.input.set([K_z, 'shift'], lambda: self.add('Z'))
+
+        self.input.set([K_1], lambda: self.add('1'))
+        self.input.set([K_2], lambda: self.add('2'))
+        self.input.set([K_3], lambda: self.add('3'))
+        self.input.set([K_4], lambda: self.add('4'))
+        self.input.set([K_5], lambda: self.add('5'))
+        self.input.set([K_6], lambda: self.add('6'))
+        self.input.set([K_7], lambda: self.add('7'))
+        self.input.set([K_8], lambda: self.add('8'))
+        self.input.set([K_9], lambda: self.add('9'))
+        self.input.set([K_0], lambda: self.add('0'))
+
+        if jp:
+            self.input.set([K_1, 'shift'], lambda: self.add('!'))
+            self.input.set([K_2, 'shift'], lambda: self.add('"'))
+            self.input.set([K_3, 'shift'], lambda: self.add('#'))
+            self.input.set([K_4, 'shift'], lambda: self.add('$'))
+            self.input.set([K_5, 'shift'], lambda: self.add('%'))
+            self.input.set([K_6, 'shift'], lambda: self.add('&'))
+            self.input.set([K_7, 'shift'], lambda: self.add('\''))
+            self.input.set([K_8, 'shift'], lambda: self.add('('))
+            self.input.set([K_9, 'shift'], lambda: self.add(')'))
+
+            self.input.set([K_SEMICOLON],             lambda: self.add(';'))
+            self.input.set([K_SEMICOLON, 'shift'],    lambda: self.add('+'))
+            self.input.set([K_COLON],                 lambda: self.add(':'))
+            self.input.set([K_COLON, 'shift'],        lambda: self.add('*'))
+            self.input.set([K_COMMA],                 lambda: self.add(','))
+            self.input.set([K_COMMA, 'shift'],        lambda: self.add('<'))
+            self.input.set([K_PERIOD],                lambda: self.add('.'))
+            self.input.set([K_PERIOD, 'shift'],       lambda: self.add('>'))
+            self.input.set([K_SLASH],                 lambda: self.add('/'))
+            self.input.set([K_SLASH, 'shift'],        lambda: self.add('?'))
+            self.input.set([K_BACKSLASH],             lambda: self.add('\\'))
+            self.input.set([K_BACKSLASH, 'shift'],    lambda: self.add('|'))
+            self.input.set([K_AT],                    lambda: self.add('@'))
+            self.input.set([K_AT, 'shift'],           lambda: self.add('`'))
+            self.input.set([K_LEFTBRACKET],           lambda: self.add('['))
+            self.input.set([K_LEFTBRACKET, 'shift'],  lambda: self.add('{'))
+            self.input.set([K_RIGHTBRACKET],          lambda: self.add(']'))
+            self.input.set([K_RIGHTBRACKET, 'shift'], lambda: self.add('}'))
+            self.input.set([K_MINUS],                 lambda: self.add('-'))
+            self.input.set([K_MINUS, 'shift'],        lambda: self.add('='))
+            self.input.set([K_CARET],                 lambda: self.add('^'))
+            self.input.set([K_CARET, 'shift'],        lambda: self.add('~'))
+            self.input.set([0],                       lambda: self.add('\\'))
+            self.input.set([0, 'shift'],              lambda: self.add('_'))
+
+        self.input.set([K_BACKSPACE], lambda: self.backspace())
+        self.input.set([K_SPACE], lambda: self.add(' '))
+        self.input.set([K_RETURN], lambda: self.call_enterfn())
 
 
 # WXのインプットダイアログ
