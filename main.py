@@ -50,7 +50,7 @@
 import os, sys, subprocess, shutil, re, collections
 
 # 外部ライブラリ
-import pygame, wx, send2trash, migemo, jaconv
+import pygame, wx, send2trash, cmigemo, jaconv
 from pygame.locals import *
 
 #
@@ -103,7 +103,9 @@ class Syl:
         self.textview_input.set([K_g],                 lambda: self.textview_top())
         self.textview_input.set([K_g, 'shift'],        lambda: self.textview_bottom())
 
-        self.textinput_cmd.set([K_ESCAPE],             lambda: self.textinput_back())
+        self.textinput_cmd.set([K_ESCAPE],             lambda: self.textinput_quit())
+        self.textinput_cmd.set([K_h, 'ctrl'],          lambda: self.textinput.backspace())
+
         self.migemo_search_cmd.set([K_n, 'ctrl'],      lambda: self.migemo_search_next())
         self.migemo_search_cmd.set([K_p, 'ctrl'],      lambda: self.migemo_search_prev())
 
@@ -179,8 +181,11 @@ class Syl:
         self.textview_input = util.Input()
         self.textinput_cmd = util.Input()
         self.migemo_search_cmd = util.Input()
-        self.migemo_ins = migemo.Migemo()
-        self.migemo_stop = collections.defaultdict(lambda: 0) # migemoそこまで検索したというやつ
+
+        # ctypes.windllでmigemo.dllを参照するのに必要
+        os.add_dll_directory(r"C:\Users\user\Desktop\tool\cmigemo")
+        self.migemo_ins = cmigemo.Migemo(r"C:\Users\user\Desktop\tool\cmigemo\dict\utf-8\migemo-dict")
+
         self.migemo_query = None
         self.ext = util.ExtCommand()
         self.ext_do_init()
@@ -582,7 +587,7 @@ class Syl:
         self.input = self.always_input + self.textinput.input + self.textinput_cmd
 
     def set_migemo_search_keybind(self):
-        self.input = self.always_input + self.textinput.input + self.migemo_search_cmd
+        self.input = self.always_input + self.textinput.input + self.migemo_search_cmd + self.textinput_cmd
 
 
     # up downで使うやつ
@@ -983,25 +988,20 @@ class Syl:
     def migemo_search_fn(self):
         if len(self.textinput.data) < self.migemo_min:
             return
-        self.migemo_stop[len(self.textinput.data)] = self.migemo_stop[len(self.textinput.data) - 1]
         self.migemo_query = self.migemo_ins.query(self.textinput.data)
 
-        for i in self.search_range_save[self.migemo_stop[len(self.textinput.data) - 1]:]:
+        for i in self.search_range():
             b = jaconv.kata2hira(self.current_filelist()[i].name())
-            if re.search(self.migemo_query, b):
+            if re.search(self.migemo_query, b, flags=re.IGNORECASE):
                 self.goto_num(i)
                 return
-            else:
-                self.migemo_stop[len(self.textinput.data)] += 1
 
     def migemo_search_next(self):
-        print(self.migemo_stop)
-        if not self.migemo_query:
-            return
-
         for i in self.search_range()[1:]:
             b = jaconv.kata2hira(self.current_filelist()[i].name())
             if re.search(self.migemo_query, b):
+                print(self.migemo_query)
+                print(b)
                 self.goto_num(i)
                 return
 
@@ -1017,10 +1017,9 @@ class Syl:
             
     # Backspaceを押したときに呼び出される関数
     def migemo_bsfn(self):
-        print(len(self.textinput.data))
-        self.migemo_stop[len(self.textinput.data)] = 0
+        pass
 
-    def textinput_back(self):
+    def textinput_quit(self):
         self.set_normal_keybind()
         self.textinput_flag = False
         self.textinput.reset()
